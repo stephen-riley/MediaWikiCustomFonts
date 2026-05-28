@@ -252,9 +252,17 @@ class SpecialCustomFontsTest extends MediaWikiIntegrationTestCase {
 			'token' => (string)$token
 		], true, $session );
 
+		$userMock = $this->createMock( \User::class );
+		$authorityMock = $this->createMock( \MediaWiki\Permissions\Authority::class );
+		$authorityMock->method( 'isAllowed' )
+			->with( 'manage-custom-fonts' )
+			->willReturn( true );
+		$authorityMock->method( 'getUser' )
+			->willReturn( $userMock );
+
 		$context = new \RequestContext();
 		$context->setRequest( $request );
-		$context->setUser( $this->getTestUser( [ 'sysop' ] )->getUser() );
+		$context->setAuthority( $authorityMock );
 
 		$out = $this->createMock( \OutputPage::class );
 		$context->setOutput( $out );
