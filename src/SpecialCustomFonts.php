@@ -22,6 +22,10 @@ class SpecialCustomFonts extends SpecialPage {
 	private string $statusMessage = '';
 	private bool $isError = false;
 
+	private array $tempUploadData = [];
+	private array $missingFormats = [];
+	private bool $showConfirmWarning = false;
+
 	/**
 	 * @param RepoGroup $repoGroup
 	 * @param ResourceLoader $resourceLoader
@@ -62,6 +66,13 @@ class SpecialCustomFonts extends SpecialPage {
 					$this->handleUpload( $request );
 				} elseif ( $action === 'delete' ) {
 					$this->handleDelete( $request );
+				} elseif ( $action === 'confirm-upload' ) {
+					$confirmBtn = $request->getVal( 'confirm-btn' );
+					if ( $confirmBtn === 'cancel' ) {
+						$this->handleCancelUpload( $request );
+					} else {
+						$this->handleConfirmUpload( $request );
+					}
 				}
 			}
 		}
@@ -116,9 +127,8 @@ class SpecialCustomFonts extends SpecialPage {
 			}
 		}
 
-		// Track font formats and required statuses
+		// Track font formats
 		$formats = [ 'woff2', 'woff', 'ttf', 'eot', 'otf' ];
-		$required = [ 'woff2', 'ttf' ];
 		$uploadedFiles = [];
 		$destFileMap = [];
 
@@ -128,11 +138,6 @@ class SpecialCustomFonts extends SpecialPage {
 			$origName = $request->getFileName( $fieldName );
 
 			if ( !$tmpName || $origName === null || $origName === '' ) {
-				if ( in_array( $format, $required, true ) ) {
-					$this->statusMessage = "The {$format} format is required.";
-					$this->isError = true;
-					return;
-				}
 				continue;
 			}
 
@@ -150,7 +155,73 @@ class SpecialCustomFonts extends SpecialPage {
 			];
 		}
 
-		// Prepare fonts directory
+		if ( !$uploadedFiles ) {
+			$this->statusMessage = 'At least one font file format must be uploaded.';
+			$this->isError = true;
+			return;
+		}
+
+		// Clean up any old pending temp uploads first
+		$session = $request->getSession();
+		if ( $session->has( 'CustomFontsTempUpload' ) ) {
+			$this->cleanTempUpload( $session->get( 'CustomFontsTempUpload' ) );
+			$session->remove( 'CustomFontsTempUpload' );
+		}
+
+		$missingFormats = array_diff( $formats, array_keys( $uploadedFiles ) );
+
+		// If incomplete package (fewer than all 5 formats), stash and ask for confirmation
+		if ( $missingFormats ) {
+			$tempDirName = 'upload-' . uniqid() . '-' . mt_rand( 1000, 9999 );
+			$tempDir = $repo->getZonePath( 'public' ) . '/fonts/tmp/' . $tempDirName;
+
+			$status = $backend->prepare( [ 'dir' => $tempDir ] );
+			if ( !$status->isOK() ) {
+				$this->statusMessage = 'Failed to prepare the temporary storage directory: ' . $status->getWikiText( false, false, 'en' );
+				$this->isError = true;
+				return;
+			}
+
+			$tempFiles = [];
+			foreach ( $uploadedFiles as $format => $fileData ) {
+				$dstPath = $tempDir . '/' . $fileData['name'];
+
+				if ( method_exists( $backend, 'quickImport' ) ) {
+					$importStatus = $backend->quickImport( [ 'src' => $fileData['tmp'], 'dst' => $dstPath ] );
+				} else {
+					$importStatus = $backend->quickStore( [ 'src' => $fileData['tmp'], 'dst' => $dstPath ] );
+				}
+
+				if ( !$importStatus->isOK() ) {
+					$this->statusMessage = "Failed to store temporary {$format} file: " . $importStatus->getWikiText( false, false, 'en' );
+					$this->isError = true;
+					$this->cleanTempUpload( [ 'tempDir' => $tempDir, 'files' => $tempFiles ] );
+					return;
+				}
+
+				$tempFiles[$format] = $fileData['name'];
+			}
+
+			// Store metadata in session
+			$session->set( 'CustomFontsTempUpload', [
+				'name' => $familyName,
+				'slug' => $slug,
+				'tempDir' => $tempDir,
+				'files' => $tempFiles
+			] );
+
+			$this->tempUploadData = [
+				'name' => $familyName,
+				'slug' => $slug,
+				'tempDir' => $tempDir,
+				'files' => $tempFiles
+			];
+			$this->missingFormats = array_values( $missingFormats );
+			$this->showConfirmWarning = true;
+			return;
+		}
+
+		// If complete package (all 5 formats), proceed to final store directly
 		$fontDir = $repo->getZonePath( 'public' ) . '/fonts/' . $slug;
 		$status = $backend->prepare( [ 'dir' => $fontDir ] );
 		if ( !$status->isOK() ) {
@@ -159,7 +230,6 @@ class SpecialCustomFonts extends SpecialPage {
 			return;
 		}
 
-		// Stream files from PHP temp storage directly into the local repository target paths
 		foreach ( $uploadedFiles as $format => $fileData ) {
 			$dstPath = $fontDir . '/' . $fileData['name'];
 
@@ -178,14 +248,12 @@ class SpecialCustomFonts extends SpecialPage {
 			$destFileMap[$format] = $fileData['name'];
 		}
 
-		// Append new font family to list
 		$fonts[] = [
 			'name' => $familyName,
 			'slug' => $slug,
 			'formats' => $destFileMap
 		];
 
-		// Save the updated JSON configuration using FileBackend
 		$jsonContent = json_encode( $fonts, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
 		$writeStatus = $backend->create( [
 			'dst' => $fontsJsonPath,
@@ -199,7 +267,6 @@ class SpecialCustomFonts extends SpecialPage {
 			return;
 		}
 
-		// Purge ResourceLoader caches
 		ResourceLoader::clearCache();
 
 		$this->statusMessage = "Font family '{$familyName}' uploaded and registered successfully.";
@@ -288,6 +355,222 @@ class SpecialCustomFonts extends SpecialPage {
 	}
 
 	/**
+	 * Process confirmation of incomplete font upload.
+	 *
+	 * @param WebRequest $request
+	 * @return void
+	 */
+	private function handleConfirmUpload( WebRequest $request ): void {
+		$session = $request->getSession();
+		$tempData = $session->get( 'CustomFontsTempUpload' );
+
+		if ( !$tempData || !is_array( $tempData ) ) {
+			$this->statusMessage = 'No pending upload found. Please try again.';
+			$this->isError = true;
+			return;
+		}
+
+		$repo = $this->repoGroup->getLocalRepo();
+		$backend = $repo->getBackend();
+		$fontsJsonPath = $repo->getZonePath( 'public' ) . '/fonts/fonts.json';
+
+		// Retrieve existing configurations
+		$fonts = [];
+		if ( $backend->fileExists( [ 'src' => $fontsJsonPath ] ) ) {
+			$content = $backend->getFileContents( [ 'src' => $fontsJsonPath ] );
+			if ( is_string( $content ) ) {
+				$fonts = json_decode( $content, true ) ?: [];
+			}
+		}
+
+		// Ensure no duplicate slugs exist
+		foreach ( $fonts as $font ) {
+			if ( isset( $font['slug'] ) && $font['slug'] === $tempData['slug'] ) {
+				$this->statusMessage = "A font family with the slug '{$tempData['slug']}' already exists.";
+				$this->isError = true;
+				$this->cleanTempUpload( $tempData );
+				$session->remove( 'CustomFontsTempUpload' );
+				return;
+			}
+		}
+
+		// Prepare destination directory
+		$fontDir = $repo->getZonePath( 'public' ) . '/fonts/' . $tempData['slug'];
+		$status = $backend->prepare( [ 'dir' => $fontDir ] );
+		if ( !$status->isOK() ) {
+			$this->statusMessage = 'Failed to prepare the storage directory: ' . $status->getWikiText( false, false, 'en' );
+			$this->isError = true;
+			$this->cleanTempUpload( $tempData );
+			$session->remove( 'CustomFontsTempUpload' );
+			return;
+		}
+
+		// Move files from temporary directory to destination
+		$ops = [];
+		$destFileMap = [];
+		foreach ( $tempData['files'] as $format => $filename ) {
+			$dstPath = $fontDir . '/' . $filename;
+			$ops[] = [
+				'op' => 'move',
+				'src' => $tempData['tempDir'] . '/' . $filename,
+				'dst' => $dstPath,
+				'overwrite' => true
+			];
+			$destFileMap[$format] = $filename;
+		}
+
+		$moveStatus = $backend->doOperations( $ops );
+		if ( !$moveStatus->isOK() ) {
+			$this->statusMessage = 'Failed to move font files: ' . $moveStatus->getWikiText( false, false, 'en' );
+			$this->isError = true;
+			$this->cleanTempUpload( $tempData );
+			$session->remove( 'CustomFontsTempUpload' );
+			return;
+		}
+
+		// Append new font family to list
+		$fonts[] = [
+			'name' => $tempData['name'],
+			'slug' => $tempData['slug'],
+			'formats' => $destFileMap
+		];
+
+		// Save the updated JSON configuration
+		$jsonContent = json_encode( $fonts, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+		$writeStatus = $backend->create( [
+			'dst' => $fontsJsonPath,
+			'content' => $jsonContent,
+			'overwrite' => true
+		] );
+
+		if ( !$writeStatus->isOK() ) {
+			$this->statusMessage = 'Failed to write config file: ' . $writeStatus->getWikiText( false, false, 'en' );
+			$this->isError = true;
+			// Clean destination directory since it failed
+			$deleteOps = [];
+			foreach ( $destFileMap as $filename ) {
+				$deleteOps[] = [
+					'op' => 'delete',
+					'src' => $fontDir . '/' . $filename
+				];
+			}
+			$backend->doOperations( $deleteOps );
+			$backend->clean( [ 'dir' => $fontDir ] );
+			return;
+		}
+
+		// Clean up temporary directory
+		$backend->clean( [ 'dir' => $tempData['tempDir'] ] );
+		$session->remove( 'CustomFontsTempUpload' );
+
+		// Purge ResourceLoader caches
+		ResourceLoader::clearCache();
+
+		$this->statusMessage = "Font family '{$tempData['name']}' uploaded and registered successfully.";
+		$this->isError = false;
+	}
+
+	/**
+	 * Process cancellation of incomplete font upload.
+	 *
+	 * @param WebRequest $request
+	 * @return void
+	 */
+	private function handleCancelUpload( WebRequest $request ): void {
+		$session = $request->getSession();
+		$tempData = $session->get( 'CustomFontsTempUpload' );
+
+		if ( $tempData && is_array( $tempData ) ) {
+			$this->cleanTempUpload( $tempData );
+		}
+
+		$session->remove( 'CustomFontsTempUpload' );
+		$this->statusMessage = 'Upload cancelled.';
+		$this->isError = false;
+	}
+
+	/**
+	 * Clean up a temporary upload from storage.
+	 *
+	 * @param array $tempData
+	 */
+	private function cleanTempUpload( array $tempData ): void {
+		$repo = $this->repoGroup->getLocalRepo();
+		$backend = $repo->getBackend();
+		$tempDir = $tempData['tempDir'] ?? null;
+		$files = $tempData['files'] ?? [];
+
+		if ( $tempDir ) {
+			$ops = [];
+			foreach ( $files as $format => $filename ) {
+				$ops[] = [
+					'op' => 'delete',
+					'src' => $tempDir . '/' . $filename
+				];
+			}
+			if ( $ops ) {
+				$backend->doOperations( $ops );
+			}
+			$backend->clean( [ 'dir' => $tempDir ] );
+		}
+	}
+
+	/**
+	 * Render confirmation warning screen.
+	 *
+	 * @return void
+	 */
+	private function renderConfirmWarning(): void {
+		$out = $this->getOutput();
+		$csrfTokenSet = new CsrfTokenSet( $this->getRequest() );
+
+		$missingList = implode( ', ', array_map( 'strtoupper', $this->missingFormats ) );
+		$warningHtml = "<div class=\"warningbox\">"
+			. "<strong>Warning:</strong> You are registering the font family '"
+			. htmlspecialchars( $this->tempUploadData['name'] )
+			. "' with missing formats: <strong>" . htmlspecialchars( $missingList ) . "</strong>.<br>"
+			. "Some older browsers or specific platforms might not render the font correctly without these formats."
+			. "</div><br>";
+		$out->addHTML( $warningHtml );
+
+		$confirmButton = new OOUI\ButtonInputWidget( [
+			'type' => 'submit',
+			'name' => 'confirm-btn',
+			'value' => 'confirm',
+			'label' => 'Proceed and Register',
+			'flags' => [ 'primary', 'progressive' ]
+		] );
+
+		$cancelButton = new OOUI\ButtonInputWidget( [
+			'type' => 'submit',
+			'name' => 'confirm-btn',
+			'value' => 'cancel',
+			'label' => 'Cancel Upload',
+			'flags' => [ 'destructive' ]
+		] );
+
+		$confirmForm = new OOUI\FormLayout( [
+			'method' => 'POST',
+			'action' => $this->getPageTitle()->getLocalURL()
+		] );
+		$confirmForm->appendContent( new OOUI\HiddenInputWidget( [
+			'name' => 'action',
+			'value' => 'confirm-upload'
+		] ) );
+		$confirmForm->appendContent( new OOUI\HiddenInputWidget( [
+			'name' => 'token',
+			'value' => $csrfTokenSet->getToken()
+		] ) );
+
+		$buttonGroup = new OOUI\HorizontalLayout( [
+			'items' => [ $confirmButton, $cancelButton ]
+		] );
+		$confirmForm->appendContent( $buttonGroup );
+
+		$out->addHTML( $confirmForm );
+	}
+
+	/**
 	 * Render special page contents.
 	 *
 	 * @return void
@@ -302,6 +585,11 @@ class SpecialCustomFonts extends SpecialPage {
 		if ( $this->statusMessage !== '' ) {
 			$class = $this->isError ? 'errorbox' : 'successbox';
 			$out->addHTML( "<div class=\"{$class}\">" . htmlspecialchars( $this->statusMessage ) . "</div><br>" );
+		}
+
+		if ( $this->showConfirmWarning ) {
+			$this->renderConfirmWarning();
+			return;
 		}
 
 		$repo = $this->repoGroup->getLocalRepo();
@@ -390,8 +678,8 @@ class SpecialCustomFonts extends SpecialPage {
 		] );
 
 		$formats = [
-			'woff2' => [ 'required' => true, 'help' => 'Highly recommended (required).' ],
-			'ttf' => [ 'required' => true, 'help' => 'TrueType outline (required).' ],
+			'woff2' => [ 'required' => false, 'help' => 'Highly recommended (optional).' ],
+			'ttf' => [ 'required' => false, 'help' => 'TrueType outline (optional).' ],
 			'woff' => [ 'required' => false, 'help' => 'Web Open Font Format (optional).' ],
 			'eot' => [ 'required' => false, 'help' => 'Embedded OpenType for legacy IE (optional).' ],
 			'otf' => [ 'required' => false, 'help' => 'OpenType outline (optional).' ],
