@@ -252,10 +252,13 @@ class SpecialCustomFontsTest extends MediaWikiIntegrationTestCase {
 			'token' => (string)$token
 		], true, $session );
 
-		$specialPage->setRequest( $request );
+		$context = new \RequestContext();
+		$context->setRequest( $request );
 
 		$out = $this->createMock( \OutputPage::class );
-		$specialPage->getContext()->setOutput( $out );
+		$context->setOutput( $out );
+
+		$specialPage->setContext( $context );
 
 		$specialPage->execute( null );
 
