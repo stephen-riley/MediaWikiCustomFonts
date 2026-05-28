@@ -254,6 +254,7 @@ class SpecialCustomFontsTest extends MediaWikiIntegrationTestCase {
 
 		$context = new \RequestContext();
 		$context->setRequest( $request );
+		$context->setUser( $this->getTestUser( [ 'sysop' ] )->getUser() );
 
 		$out = $this->createMock( \OutputPage::class );
 		$context->setOutput( $out );
