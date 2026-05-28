@@ -92,10 +92,16 @@ The extension includes a suite of unit and integration tests under `tests/phpuni
 
 ### Run all tests in the extension
 
+You must install dependencies before running tests for the first time.  From the MediaWiki directory:
+
+```bash
+composer install
+```
+
 Run from within your **MediaWiki core directory**:
 
 ```bash
-composer phpunit:entrypoint -- extensions/MediaWikiCustomFonts/tests/phpunit/
+composer phpunit:entrypoint -- --configuration tests/phpunit/suite.xml extensions/MediaWikiCustomFonts/tests/phpunit/
 ```
 
 ### Run specific tests
