@@ -10,6 +10,11 @@
 		"MediaWiki": ">= 1.45.0"
 	},
 	"manifest_version": 2,
+	"MessagesDirs": {
+		"MediaWikiCustomFonts": [
+			"i18n"
+		]
+	},
 	"ExtensionMessagesFiles": {
 		"MediaWikiCustomFontsAlias": "i18n/MediaWikiCustomFonts.i18n.alias.php"
 	},
