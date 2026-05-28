@@ -233,4 +233,74 @@ class SpecialCustomFontsTest extends MediaWikiIntegrationTestCase {
 		// Verify session cleared
 		$this->assertNull( $session->get( 'CustomFontsTempUpload' ) );
 	}
+
+	/**
+	 * Test that post action 'delete' triggers confirmation warning.
+	 */
+	public function testDeleteActionTriggersConfirm(): void {
+		$specialPage = new SpecialCustomFonts( $this->repoGroupMock, $this->resourceLoaderMock );
+
+		// Initialize session/request for CSRF
+		$request = new FauxRequest( [], true );
+		$csrfTokenSet = new \MediaWiki\Session\CsrfTokenSet( $request );
+		$token = $csrfTokenSet->getToken();
+
+		$session = $request->getSession();
+		$request = new FauxRequest( [
+			'action' => 'delete',
+			'slug' => 'test-font',
+			'token' => (string)$token
+		], true, $session );
+
+		$specialPage->setRequest( $request );
+
+		$out = $this->createMock( \OutputPage::class );
+		$specialPage->getContext()->setOutput( $out );
+
+		$specialPage->execute( null );
+
+		$wrapper = TestingAccessWrapper::newFromObject( $specialPage );
+		$this->assertTrue( $wrapper->showDeleteConfirm );
+		$this->assertSame( 'test-font', $wrapper->deleteSlug );
+	}
+
+	/**
+	 * Test confirming font deletion.
+	 */
+	public function testDeleteConfirmed(): void {
+		$specialPage = new SpecialCustomFonts( $this->repoGroupMock, $this->resourceLoaderMock );
+		$wrapper = TestingAccessWrapper::newFromObject( $specialPage );
+
+		// Setup registered font family and files
+		$fontDir = $this->repoMock->getZonePath( 'public' ) . '/fonts/test-font';
+		$this->backend->prepare( [ 'dir' => $fontDir ] );
+		$this->backend->create( [ 'dst' => $fontDir . '/test-font.woff2', 'content' => 'woff2-content' ] );
+
+		$fontsJsonPath = $this->repoMock->getZonePath( 'public' ) . '/fonts/fonts.json';
+		$fontData = [
+			[
+				'name' => 'Test Font',
+				'slug' => 'test-font',
+				'formats' => [
+					'woff2' => 'test-font.woff2'
+				]
+			]
+		];
+		$this->backend->create( [ 'dst' => $fontsJsonPath, 'content' => json_encode( $fontData ) ] );
+
+		// Call the refactored handleDelete method
+		$wrapper->handleDelete( 'test-font' );
+
+		// Assertions
+		$this->assertFalse( $wrapper->isError );
+		$this->assertStringContainsString( 'has been deleted', $wrapper->statusMessage );
+
+		// Verify files deleted
+		$this->assertFalse( $this->backend->fileExists( [ 'src' => $fontDir . '/test-font.woff2' ] ) );
+
+		// Verify removed from fonts.json
+		$json = json_decode( $this->backend->getFileContents( [ 'src' => $fontsJsonPath ] ), true );
+		$this->assertEmpty( $json );
+	}
 }
+

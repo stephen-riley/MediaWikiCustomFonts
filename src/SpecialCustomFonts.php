@@ -26,6 +26,9 @@ class SpecialCustomFonts extends SpecialPage {
 	private array $missingFormats = [];
 	private bool $showConfirmWarning = false;
 
+	private string $deleteSlug = '';
+	private bool $showDeleteConfirm = false;
+
 	/**
 	 * @param RepoGroup $repoGroup
 	 * @param ResourceLoader $resourceLoader
@@ -65,7 +68,23 @@ class SpecialCustomFonts extends SpecialPage {
 				if ( $action === 'upload' ) {
 					$this->handleUpload( $request );
 				} elseif ( $action === 'delete' ) {
-					$this->handleDelete( $request );
+					$slug = (string)$request->getVal( 'slug' );
+					if ( $slug !== '' ) {
+						$this->deleteSlug = $slug;
+						$this->showDeleteConfirm = true;
+					} else {
+						$this->statusMessage = 'Missing font slug for deletion.';
+						$this->isError = true;
+					}
+				} elseif ( $action === 'confirm-delete' ) {
+					$confirmBtn = $request->getVal( 'confirm-btn' );
+					$slug = (string)$request->getVal( 'slug' );
+					if ( $confirmBtn === 'cancel' ) {
+						$this->statusMessage = 'Deletion cancelled.';
+						$this->isError = false;
+					} else {
+						$this->handleDelete( $slug );
+					}
 				} elseif ( $action === 'confirm-upload' ) {
 					$confirmBtn = $request->getVal( 'confirm-btn' );
 					if ( $confirmBtn === 'cancel' ) {
@@ -276,11 +295,10 @@ class SpecialCustomFonts extends SpecialPage {
 	/**
 	 * Process custom font deletion.
 	 *
-	 * @param WebRequest $request
+	 * @param string $slug
 	 * @return void
 	 */
-	private function handleDelete( WebRequest $request ): void {
-		$slug = (string)$request->getVal( 'slug' );
+	private function handleDelete( string $slug ): void {
 		if ( $slug === '' ) {
 			$this->statusMessage = 'Missing font slug for deletion.';
 			$this->isError = true;
@@ -571,6 +589,83 @@ class SpecialCustomFonts extends SpecialPage {
 	}
 
 	/**
+	 * Render confirmation warning screen for deletion.
+	 *
+	 * @return void
+	 */
+	private function renderDeleteConfirm(): void {
+		$out = $this->getOutput();
+		$csrfTokenSet = new CsrfTokenSet( $this->getRequest() );
+		$slug = $this->deleteSlug;
+
+		// Try to find the font's display name
+		$repo = $this->repoGroup->getLocalRepo();
+		$backend = $repo->getBackend();
+		$fontsJsonPath = $repo->getZonePath( 'public' ) . '/fonts/fonts.json';
+		$fontName = $slug;
+
+		if ( $backend->fileExists( [ 'src' => $fontsJsonPath ] ) ) {
+			$content = $backend->getFileContents( [ 'src' => $fontsJsonPath ] );
+			if ( is_string( $content ) ) {
+				$fonts = json_decode( $content, true ) ?: [];
+				foreach ( $fonts as $font ) {
+					if ( isset( $font['slug'] ) && $font['slug'] === $slug ) {
+						$fontName = $font['name'] ?? $slug;
+						break;
+					}
+				}
+			}
+		}
+
+		$warningHtml = "<div class=\"warningbox\">"
+			. "<strong>Warning:</strong> Are you sure you want to delete the font family '<strong>"
+			. htmlspecialchars( $fontName ) . "</strong>' (slug: <code>" . htmlspecialchars( $slug ) . "</code>)?<br>"
+			. "This will permanently remove all associated font files and cannot be undone."
+			. "</div><br>";
+		$out->addHTML( $warningHtml );
+
+		$confirmButton = new OOUI\ButtonInputWidget( [
+			'type' => 'submit',
+			'name' => 'confirm-btn',
+			'value' => 'confirm',
+			'label' => 'Delete Font',
+			'flags' => [ 'primary', 'destructive' ]
+		] );
+
+		$cancelButton = new OOUI\ButtonInputWidget( [
+			'type' => 'submit',
+			'name' => 'confirm-btn',
+			'value' => 'cancel',
+			'label' => 'Cancel',
+			'flags' => [ 'safe' ]
+		] );
+
+		$confirmForm = new OOUI\FormLayout( [
+			'method' => 'POST',
+			'action' => $this->getPageTitle()->getLocalURL()
+		] );
+		$confirmForm->appendContent( new OOUI\HiddenInputWidget( [
+			'name' => 'action',
+			'value' => 'confirm-delete'
+		] ) );
+		$confirmForm->appendContent( new OOUI\HiddenInputWidget( [
+			'name' => 'slug',
+			'value' => $slug
+		] ) );
+		$confirmForm->appendContent( new OOUI\HiddenInputWidget( [
+			'name' => 'token',
+			'value' => $csrfTokenSet->getToken()
+		] ) );
+
+		$buttonGroup = new OOUI\HorizontalLayout( [
+			'items' => [ $confirmButton, $cancelButton ]
+		] );
+		$confirmForm->appendContent( $buttonGroup );
+
+		$out->addHTML( $confirmForm );
+	}
+
+	/**
 	 * Render special page contents.
 	 *
 	 * @return void
@@ -589,6 +684,11 @@ class SpecialCustomFonts extends SpecialPage {
 
 		if ( $this->showConfirmWarning ) {
 			$this->renderConfirmWarning();
+			return;
+		}
+
+		if ( $this->showDeleteConfirm ) {
+			$this->renderDeleteConfirm();
 			return;
 		}
 
