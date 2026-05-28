@@ -163,7 +163,7 @@ class SpecialCustomFonts extends SpecialPage {
 
 		// Clean up any old pending temp uploads first
 		$session = $request->getSession();
-		if ( $session->has( 'CustomFontsTempUpload' ) ) {
+		if ( $session->exists( 'CustomFontsTempUpload' ) ) {
 			$this->cleanTempUpload( $session->get( 'CustomFontsTempUpload' ) );
 			$session->remove( 'CustomFontsTempUpload' );
 		}
