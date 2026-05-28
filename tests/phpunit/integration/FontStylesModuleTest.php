@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace MediaWiki\Extension\MediaWikiCustomFonts\Tests\Integration;
 
 use MediaWiki\Extension\MediaWikiCustomFonts\FontStylesModule;
-use Wikimedia\FileBackend\FileBackend;
-use MediaWiki\FileRepo\LocalRepo;
-use MediaWiki\FileRepo\RepoGroup;
+use MediaWiki\MediaWikiServices;
 use MediaWiki\ResourceLoader\Context as ResourceLoaderContext;
 use MediaWikiIntegrationTestCase;
 
@@ -29,22 +27,14 @@ class FontStylesModuleTest extends MediaWikiIntegrationTestCase {
 	 * Test getStyles when fonts.json does not exist.
 	 */
 	public function testGetStylesEmpty(): void {
-		$backendMock = $this->createMock( FileBackend::class );
-		$backendMock->method( 'fileExists' )
-			->willReturn( false );
+		$repo = MediaWikiServices::getInstance()->getRepoGroup()->getLocalRepo();
+		$backend = $repo->getBackend();
+		$fontsJsonPath = $repo->getZonePath( 'public' ) . '/fonts/fonts.json';
 
-		$repoMock = $this->createMock( LocalRepo::class );
-		$repoMock->method( 'getBackend' )
-			->willReturn( $backendMock );
-		$repoMock->method( 'getZonePath' )
-			->with( 'public' )
-			->willReturn( 'mwstore://local-backend/local-public' );
-
-		$repoGroupMock = $this->createMock( RepoGroup::class );
-		$repoGroupMock->method( 'getLocalRepo' )
-			->willReturn( $repoMock );
-
-		$this->setService( 'RepoGroup', $repoGroupMock );
+		// Clean up in case it exists from other tests
+		if ( $backend->fileExists( [ 'src' => $fontsJsonPath ] ) ) {
+			$backend->doOperation( [ 'op' => 'delete', 'src' => $fontsJsonPath ] );
+		}
 
 		$module = new FontStylesModule();
 		$context = $this->createMock( ResourceLoaderContext::class );
@@ -68,39 +58,33 @@ class FontStylesModuleTest extends MediaWikiIntegrationTestCase {
 			]
 		];
 
-		$backendMock = $this->createMock( FileBackend::class );
-		$backendMock->method( 'fileExists' )
-			->willReturn( true );
-		$backendMock->method( 'getFileContents' )
-			->willReturn( json_encode( $fontData ) );
+		$repo = MediaWikiServices::getInstance()->getRepoGroup()->getLocalRepo();
+		$backend = $repo->getBackend();
+		$fontsJsonPath = $repo->getZonePath( 'public' ) . '/fonts/fonts.json';
 
-		$repoMock = $this->createMock( LocalRepo::class );
-		$repoMock->method( 'getBackend' )
-			->willReturn( $backendMock );
-		$repoMock->method( 'getZonePath' )
-			->with( 'public' )
-			->willReturn( 'mwstore://local-backend/local-public' );
-		$repoMock->method( 'getZoneUrl' )
-			->with( 'public' )
-			->willReturn( 'https://example.com/images' );
-
-		$repoGroupMock = $this->createMock( RepoGroup::class );
-		$repoGroupMock->method( 'getLocalRepo' )
-			->willReturn( $repoMock );
-
-		$this->setService( 'RepoGroup', $repoGroupMock );
+		// Write to the temporary repository backend
+		$backend->prepare( [ 'dir' => dirname( $fontsJsonPath ) ] );
+		$backend->create( [
+			'dst' => $fontsJsonPath,
+			'content' => json_encode( $fontData ),
+			'overwrite' => true
+		] );
 
 		$module = new FontStylesModule();
 		$context = $this->createMock( ResourceLoaderContext::class );
 
 		$styles = $module->getStyles( $context );
 
+		$baseUrl = $repo->getZoneUrl( 'public' );
 		$expectedCss = "@font-face {\n"
 			. "\tfont-family: 'Open Sans';\n"
-			. "\tsrc: url('https://example.com/images/fonts/open-sans/open-sans-regular.woff2') format('woff2'),\n"
-			. "\t\turl('https://example.com/images/fonts/open-sans/open-sans-regular.ttf') format('truetype');\n"
+			. "\tsrc: url('" . $baseUrl . "/fonts/open-sans/open-sans-regular.woff2') format('woff2'),\n"
+			. "\t\turl('" . $baseUrl . "/fonts/open-sans/open-sans-regular.ttf') format('truetype');\n"
 			. "}\n";
 
 		$this->assertSame( [ 'all' => [ $expectedCss ] ], $styles );
+
+		// Clean up the created test file
+		$backend->doOperation( [ 'op' => 'delete', 'src' => $fontsJsonPath ] );
 	}
 }
