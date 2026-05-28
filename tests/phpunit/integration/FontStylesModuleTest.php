@@ -5,15 +5,77 @@ declare(strict_types=1);
 namespace MediaWiki\Extension\MediaWikiCustomFonts\Tests\Integration;
 
 use MediaWiki\Extension\MediaWikiCustomFonts\FontStylesModule;
-use MediaWiki\MediaWikiServices;
+use MediaWiki\FileRepo\LocalRepo;
+use MediaWiki\FileRepo\RepoGroup;
 use MediaWiki\ResourceLoader\Context as ResourceLoaderContext;
 use MediaWikiIntegrationTestCase;
+use Wikimedia\FileBackend\FSFileBackend;
 
 /**
  * @group CustomFonts
  * @covers \MediaWiki\Extension\MediaWikiCustomFonts\FontStylesModule
  */
 class FontStylesModuleTest extends MediaWikiIntegrationTestCase {
+
+	/** @var string */
+	private string $tempDir;
+
+	/** @var FSFileBackend */
+	private FSFileBackend $backend;
+
+	/** @var LocalRepo|\PHPUnit\Framework\MockObject\MockObject */
+	private $repoMock;
+
+	protected function setUp(): void {
+		parent::setUp();
+
+		$this->tempDir = sys_get_temp_dir() . '/mw-customfonts-test-' . uniqid();
+		mkdir( $this->tempDir, 0777, true );
+
+		$this->backend = new FSFileBackend( [
+			'name' => 'test-fonts-backend',
+			'wikiId' => 'testwiki',
+			'containerPaths' => [ 'test-container' => $this->tempDir ]
+		] );
+
+		$this->repoMock = $this->createMock( LocalRepo::class );
+		$this->repoMock->method( 'getBackend' )->willReturn( $this->backend );
+		$this->repoMock->method( 'getZonePath' )->willReturn( 'mwstore://test-fonts-backend/test-container' );
+		$this->repoMock->method( 'getZoneUrl' )->willReturn( '/images' );
+
+		$repoGroupMock = $this->createMock( RepoGroup::class );
+		$repoGroupMock->method( 'getLocalRepo' )->willReturn( $this->repoMock );
+
+		$this->setService( 'RepoGroup', $repoGroupMock );
+	}
+
+	protected function tearDown(): void {
+		if ( is_dir( $this->tempDir ) ) {
+			$this->deleteDirectory( $this->tempDir );
+		}
+		parent::tearDown();
+	}
+
+	/**
+	 * Recursively delete a directory.
+	 *
+	 * @param string $dir
+	 */
+	private function deleteDirectory( string $dir ): void {
+		if ( !is_dir( $dir ) ) {
+			return;
+		}
+		$files = array_diff( scandir( $dir ), [ '.', '..' ] );
+		foreach ( $files as $file ) {
+			$path = $dir . '/' . $file;
+			if ( is_dir( $path ) ) {
+				$this->deleteDirectory( $path );
+			} else {
+				unlink( $path );
+			}
+		}
+		rmdir( $dir );
+	}
 
 	/**
 	 * Test module type is styles.
@@ -27,8 +89,8 @@ class FontStylesModuleTest extends MediaWikiIntegrationTestCase {
 	 * Test getStyles when fonts.json does not exist.
 	 */
 	public function testGetStylesEmpty(): void {
-		$repo = MediaWikiServices::getInstance()->getRepoGroup()->getLocalRepo();
-		$backend = $repo->getBackend();
+		$repo = $this->repoMock;
+		$backend = $this->backend;
 		$fontsJsonPath = $repo->getZonePath( 'public' ) . '/fonts/fonts.json';
 
 		// Clean up in case it exists from other tests
@@ -58,8 +120,8 @@ class FontStylesModuleTest extends MediaWikiIntegrationTestCase {
 			]
 		];
 
-		$repo = MediaWikiServices::getInstance()->getRepoGroup()->getLocalRepo();
-		$backend = $repo->getBackend();
+		$repo = $this->repoMock;
+		$backend = $this->backend;
 		$fontsJsonPath = $repo->getZonePath( 'public' ) . '/fonts/fonts.json';
 
 		// Write to the temporary repository backend
@@ -88,3 +150,4 @@ class FontStylesModuleTest extends MediaWikiIntegrationTestCase {
 		$backend->doOperation( [ 'op' => 'delete', 'src' => $fontsJsonPath ] );
 	}
 }
+
