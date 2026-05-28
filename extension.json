@@ -1,0 +1,46 @@
+{
+	"name": "CustomFonts",
+	"version": "1.0.0",
+	"author": "Antigravity",
+	"url": "https://www.mediawiki.org/wiki/Extension:CustomFonts",
+	"description": "Allows administrators to upload and manage custom web fonts served dynamically via ResourceLoader.",
+	"license-name": "GPL-2.0-or-later",
+	"type": "other",
+	"requires": {
+		"MediaWiki": ">= 1.45.0"
+	},
+	"manifest_version": 2,
+	"SpecialPages": {
+		"CustomFonts": {
+			"class": "MediaWiki\\Extension\\CustomFonts\\SpecialCustomFonts",
+			"services": [
+				"RepoGroup",
+				"ResourceLoader"
+			]
+		}
+	},
+	"AvailableRights": [
+		"manage-custom-fonts"
+	],
+	"GroupPermissions": {
+		"sysop": {
+			"manage-custom-fonts": true
+		}
+	},
+	"ResourceModules": {
+		"ext.customFonts.styles": {
+			"class": "MediaWiki\\Extension\\CustomFonts\\FontStylesModule"
+		}
+	},
+	"Hooks": {
+		"BeforePageDisplay": "CustomFontsHookHandler"
+	},
+	"HookHandlers": {
+		"CustomFontsHookHandler": {
+			"class": "MediaWiki\\Extension\\CustomFonts\\HookHandler"
+		}
+	},
+	"AutoloadNamespaces": {
+		"MediaWiki\\Extension\\CustomFonts\\": "src/"
+	}
+}
