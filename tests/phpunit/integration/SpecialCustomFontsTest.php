@@ -58,7 +58,6 @@ class SpecialCustomFontsTest extends MediaWikiIntegrationTestCase {
 	}
 
 	protected function tearDown(): void {
-		$_FILES = [];
 		if ( is_dir( $this->tempDir ) ) {
 			$this->deleteDirectory( $this->tempDir );
 		}
@@ -103,27 +102,26 @@ class SpecialCustomFontsTest extends MediaWikiIntegrationTestCase {
 		file_put_contents( $srcWoff2, 'woff2-content' );
 		file_put_contents( $srcTtf, 'ttf-content' );
 
-		// Setup $_FILES for request upload mocking
-		$_FILES['font-file-woff2'] = [
-			'name' => 'dummy.woff2',
-			'type' => 'font/woff2',
-			'size' => 13,
-			'tmp_name' => $srcWoff2,
-			'error' => UPLOAD_ERR_OK
-		];
-		$_FILES['font-file-ttf'] = [
-			'name' => 'dummy.ttf',
-			'type' => 'font/ttf',
-			'size' => 11,
-			'tmp_name' => $srcTtf,
-			'error' => UPLOAD_ERR_OK
-		];
-
 		// Instantiate FauxRequest
 		$request = new FauxRequest( [
 			'font-name' => 'Test Font',
 			'action' => 'upload'
 		], true );
+
+		$request->setUpload( 'font-file-woff2', [
+			'name' => 'dummy.woff2',
+			'type' => 'font/woff2',
+			'size' => 13,
+			'tmp_name' => $srcWoff2,
+			'error' => UPLOAD_ERR_OK
+		] );
+		$request->setUpload( 'font-file-ttf', [
+			'name' => 'dummy.ttf',
+			'type' => 'font/ttf',
+			'size' => 11,
+			'tmp_name' => $srcTtf,
+			'error' => UPLOAD_ERR_OK
+		] );
 
 		// Call the private handleUpload method
 		$wrapper->handleUpload( $request );
