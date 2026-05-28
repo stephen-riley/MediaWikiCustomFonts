@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace MediaWiki\Extension\CustomFonts;
+namespace MediaWiki\Extension\MediaWikiCustomFonts;
 
 use MediaWiki\FileRepo\RepoGroup;
 use MediaWiki\ResourceLoader\ResourceLoader;

@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace MediaWiki\Extension\CustomFonts\Tests\Unit;
+namespace MediaWiki\Extension\MediaWikiCustomFonts\Tests\Unit;
 
-use MediaWiki\Extension\CustomFonts\HookHandler;
+use MediaWiki\Extension\MediaWikiCustomFonts\HookHandler;
 use MediaWikiUnitTestCase;
 use OutputPage;
 use Skin;
 
 /**
  * @group CustomFonts
- * @covers \MediaWiki\Extension\CustomFonts\HookHandler
+ * @covers \MediaWiki\Extension\MediaWikiCustomFonts\HookHandler
  */
 class HookHandlerTest extends MediaWikiUnitTestCase {
 

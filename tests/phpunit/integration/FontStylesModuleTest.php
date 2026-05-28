@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace MediaWiki\Extension\CustomFonts\Tests\Integration;
+namespace MediaWiki\Extension\MediaWikiCustomFonts\Tests\Integration;
 
-use MediaWiki\Extension\CustomFonts\FontStylesModule;
+use MediaWiki\Extension\MediaWikiCustomFonts\FontStylesModule;
 use MediaWiki\FileBackend\FileBackend;
 use MediaWiki\FileRepo\LocalRepo;
 use MediaWiki\FileRepo\RepoGroup;
@@ -13,7 +13,7 @@ use MediaWikiIntegrationTestCase;
 
 /**
  * @group CustomFonts
- * @covers \MediaWiki\Extension\CustomFonts\FontStylesModule
+ * @covers \MediaWiki\Extension\MediaWikiCustomFonts\FontStylesModule
  */
 class FontStylesModuleTest extends MediaWikiIntegrationTestCase {
 

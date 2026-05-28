@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace MediaWiki\Extension\CustomFonts\Tests\Integration;
+namespace MediaWiki\Extension\MediaWikiCustomFonts\Tests\Integration;
 
-use MediaWiki\Extension\CustomFonts\SpecialCustomFonts;
+use MediaWiki\Extension\MediaWikiCustomFonts\SpecialCustomFonts;
 use MediaWiki\FileRepo\RepoGroup;
 use MediaWiki\ResourceLoader\ResourceLoader;
 use MediaWikiIntegrationTestCase;
 
 /**
  * @group CustomFonts
- * @covers \MediaWiki\Extension\CustomFonts\SpecialCustomFonts
+ * @covers \MediaWiki\Extension\MediaWikiCustomFonts\SpecialCustomFonts
  */
 class SpecialCustomFontsTest extends MediaWikiIntegrationTestCase {
 

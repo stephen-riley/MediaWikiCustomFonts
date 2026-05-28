@@ -1,6 +1,6 @@
-# MediaWiki CustomFonts Extension
+# MediaWikiCustomFonts Extension
 
-The **CustomFonts** extension for MediaWiki allows site administrators (sysops) to upload custom web fonts (`.woff2`, `.woff`, `.ttf`, `.eot`, `.otf`) directly through a special page, stores them using MediaWiki's internal `FileBackend` architecture, and serves them dynamically across all wiki pages using `ResourceLoader`.
+The **MediaWikiCustomFonts** extension for MediaWiki allows site administrators (sysops) to upload custom web fonts (`.woff2`, `.woff`, `.ttf`, `.eot`, `.otf`) directly through a special page, stores them using MediaWiki's internal `FileBackend` architecture, and serves them dynamically across all wiki pages using `ResourceLoader`.
 
 This extension is built targeting **MediaWiki 1.45.x+** and conforms to modern extension development practices (ObjectFactory constructor injection, namespaces, strict types, and session-based CSRF protection).
 
@@ -25,7 +25,7 @@ Clone or copy this extension to your MediaWiki installation's `extensions/` dire
 
 ```bash
 cd /path/to/mediawiki/extensions/
-git clone https://github.com/stephen-riley/mediawiki-customfonts-extension.git CustomFonts
+git clone https://github.com/stephen-riley/mediawiki-customfonts-extension.git MediaWikiCustomFonts
 ```
 
 ### 2. Enable the Extension
@@ -33,7 +33,7 @@ git clone https://github.com/stephen-riley/mediawiki-customfonts-extension.git C
 Add the following line to the bottom of your `$IP/LocalSettings.php` file:
 
 ```php
-wfLoadExtension( 'CustomFonts' );
+wfLoadExtension( 'MediaWikiCustomFonts' );
 ```
 
 ---
@@ -95,7 +95,7 @@ The extension includes a suite of unit and integration tests under `tests/phpuni
 Run from within your **MediaWiki core directory**:
 
 ```bash
-composer phpunit:entrypoint -- extensions/CustomFonts/tests/phpunit/
+composer phpunit:entrypoint -- extensions/MediaWikiCustomFonts/tests/phpunit/
 ```
 
 ### Run specific tests
@@ -103,13 +103,13 @@ composer phpunit:entrypoint -- extensions/CustomFonts/tests/phpunit/
 - **Unit Tests:**
 
   ```bash
-  composer phpunit:entrypoint -- extensions/CustomFonts/tests/phpunit/unit/HookHandlerTest.php
+  composer phpunit:entrypoint -- extensions/MediaWikiCustomFonts/tests/phpunit/unit/HookHandlerTest.php
   ```
 
 - **Integration Tests:**
 
   ```bash
-  composer phpunit:entrypoint -- extensions/CustomFonts/tests/phpunit/integration/FontStylesModuleTest.php
+  composer phpunit:entrypoint -- extensions/MediaWikiCustomFonts/tests/phpunit/integration/FontStylesModuleTest.php
   ```
 
 ---
