@@ -7,6 +7,7 @@ namespace MediaWiki\Extension\MediaWikiCustomFonts\Tests\Integration;
 use MediaWiki\Extension\MediaWikiCustomFonts\SpecialCustomFonts;
 use MediaWiki\FileRepo\LocalRepo;
 use MediaWiki\FileRepo\RepoGroup;
+use MediaWiki\Request\FauxRequest;
 use MediaWiki\ResourceLoader\ResourceLoader;
 use MediaWikiIntegrationTestCase;
 use Wikimedia\FileBackend\FSFileBackend;
@@ -119,7 +120,7 @@ class SpecialCustomFontsTest extends MediaWikiIntegrationTestCase {
 		];
 
 		// Instantiate FauxRequest
-		$request = new \FauxRequest( [
+		$request = new FauxRequest( [
 			'font-name' => 'Test Font',
 			'action' => 'upload'
 		], true );
@@ -158,7 +159,7 @@ class SpecialCustomFontsTest extends MediaWikiIntegrationTestCase {
 		$this->backend->create( [ 'dst' => $tempDir . '/test-font.woff2', 'content' => 'woff2-content' ] );
 
 		// Instantiate FauxRequest
-		$request = new \FauxRequest( [], true );
+		$request = new FauxRequest( [], true );
 
 		// Populate Session with pending upload
 		$session = $request->getSession();
@@ -208,7 +209,7 @@ class SpecialCustomFontsTest extends MediaWikiIntegrationTestCase {
 		$this->backend->create( [ 'dst' => $tempDir . '/test-font.woff2', 'content' => 'woff2-content' ] );
 
 		// Instantiate FauxRequest
-		$request = new \FauxRequest( [], true );
+		$request = new FauxRequest( [], true );
 
 		// Populate Session with pending upload
 		$session = $request->getSession();
