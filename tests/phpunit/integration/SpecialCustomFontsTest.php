@@ -238,7 +238,11 @@ class SpecialCustomFontsTest extends MediaWikiIntegrationTestCase {
 	 * Test that post action 'delete' triggers confirmation warning.
 	 */
 	public function testDeleteActionTriggersConfirm(): void {
-		$specialPage = new SpecialCustomFonts( $this->repoGroupMock, $this->resourceLoaderMock );
+		$specialPage = $this->getMockBuilder( SpecialCustomFonts::class )
+			->setConstructorArgs( [ $this->repoGroupMock, $this->resourceLoaderMock ] )
+			->onlyMethods( [ 'userCanExecute' ] )
+			->getMock();
+		$specialPage->method( 'userCanExecute' )->willReturn( true );
 
 		// Initialize session/request for CSRF
 		$request = new FauxRequest( [], true );
