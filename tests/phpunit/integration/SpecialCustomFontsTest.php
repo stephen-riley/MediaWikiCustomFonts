@@ -4,14 +4,11 @@ declare(strict_types=1);
 
 namespace MediaWiki\Extension\MediaWikiCustomFonts\Tests\Integration;
 
-use FauxResponse;
 use MediaWiki\Extension\MediaWikiCustomFonts\SpecialCustomFonts;
 use MediaWiki\FileRepo\LocalRepo;
 use MediaWiki\FileRepo\RepoGroup;
 use MediaWiki\ResourceLoader\ResourceLoader;
-use MediaWiki\Session\Session;
 use MediaWikiIntegrationTestCase;
-use WebRequest;
 use Wikimedia\FileBackend\FSFileBackend;
 use Wikimedia\TestingAccessWrapper;
 
@@ -60,6 +57,7 @@ class SpecialCustomFontsTest extends MediaWikiIntegrationTestCase {
 	}
 
 	protected function tearDown(): void {
+		$_FILES = [];
 		if ( is_dir( $this->tempDir ) ) {
 			$this->deleteDirectory( $this->tempDir );
 		}
@@ -104,48 +102,30 @@ class SpecialCustomFontsTest extends MediaWikiIntegrationTestCase {
 		file_put_contents( $srcWoff2, 'woff2-content' );
 		file_put_contents( $srcTtf, 'ttf-content' );
 
-		// Mock WebRequest
-		$requestMock = $this->createMock( WebRequest::class );
-		$requestMock->method( 'getVal' )->willReturnMap( [
-			[ 'font-name', 'Test Font' ]
-		] );
+		// Setup $_FILES for request upload mocking
+		$_FILES['font-file-woff2'] = [
+			'name' => 'dummy.woff2',
+			'type' => 'font/woff2',
+			'size' => 13,
+			'tmp_name' => $srcWoff2,
+			'error' => UPLOAD_ERR_OK
+		];
+		$_FILES['font-file-ttf'] = [
+			'name' => 'dummy.ttf',
+			'type' => 'font/ttf',
+			'size' => 11,
+			'tmp_name' => $srcTtf,
+			'error' => UPLOAD_ERR_OK
+		];
 
-		$requestMock->method( 'getFileTempname' )->willReturnMap( [
-			[ 'font-file-woff2', $srcWoff2 ],
-			[ 'font-file-ttf', $srcTtf ],
-			[ 'font-file-woff', '' ],
-			[ 'font-file-eot', '' ],
-			[ 'font-file-otf', '' ]
-		] );
-
-		$requestMock->method( 'getFileName' )->willReturnMap( [
-			[ 'font-file-woff2', 'dummy.woff2' ],
-			[ 'font-file-ttf', 'dummy.ttf' ],
-			[ 'font-file-woff', '' ],
-			[ 'font-file-eot', '' ],
-			[ 'font-file-otf', '' ]
-		] );
-
-		// Mock Session
-		$sessionData = [];
-		$sessionMock = $this->createMock( Session::class );
-		$sessionMock->method( 'has' )->willReturnCallback( function( $key ) use ( &$sessionData ) {
-			return isset( $sessionData[$key] );
-		} );
-		$sessionMock->method( 'set' )->willReturnCallback( function( $key, $value ) use ( &$sessionData ) {
-			$sessionData[$key] = $value;
-		} );
-		$sessionMock->method( 'get' )->willReturnCallback( function( $key ) use ( &$sessionData ) {
-			return $sessionData[$key] ?? null;
-		} );
-		$sessionMock->method( 'remove' )->willReturnCallback( function( $key ) use ( &$sessionData ) {
-			unset( $sessionData[$key] );
-		} );
-
-		$requestMock->method( 'getSession' )->willReturn( $sessionMock );
+		// Instantiate FauxRequest
+		$request = new \FauxRequest( [
+			'font-name' => 'Test Font',
+			'action' => 'upload'
+		], true );
 
 		// Call the private handleUpload method
-		$wrapper->handleUpload( $requestMock );
+		$wrapper->handleUpload( $request );
 
 		// Assertions
 		$this->assertTrue( $wrapper->showConfirmWarning );
@@ -159,8 +139,10 @@ class SpecialCustomFontsTest extends MediaWikiIntegrationTestCase {
 		$this->assertTrue( $this->backend->fileExists( [ 'src' => $tempDir . '/test-font.ttf' ] ) );
 
 		// Verify session has stash info
-		$this->assertNotNull( $sessionData['CustomFontsTempUpload'] );
-		$this->assertSame( $tempDir, $sessionData['CustomFontsTempUpload']['tempDir'] );
+		$session = $request->getSession();
+		$stashData = $session->get( 'CustomFontsTempUpload' );
+		$this->assertNotNull( $stashData );
+		$this->assertSame( $tempDir, $stashData['tempDir'] );
 	}
 
 	/**
@@ -175,31 +157,22 @@ class SpecialCustomFontsTest extends MediaWikiIntegrationTestCase {
 		$this->backend->prepare( [ 'dir' => $tempDir ] );
 		$this->backend->create( [ 'dst' => $tempDir . '/test-font.woff2', 'content' => 'woff2-content' ] );
 
-		// Mock Session populated with pending upload
-		$sessionData = [
-			'CustomFontsTempUpload' => [
-				'name' => 'Test Font',
-				'slug' => 'test-font',
-				'tempDir' => $tempDir,
-				'files' => [
-					'woff2' => 'test-font.woff2'
-				]
+		// Instantiate FauxRequest
+		$request = new \FauxRequest( [], true );
+
+		// Populate Session with pending upload
+		$session = $request->getSession();
+		$session->set( 'CustomFontsTempUpload', [
+			'name' => 'Test Font',
+			'slug' => 'test-font',
+			'tempDir' => $tempDir,
+			'files' => [
+				'woff2' => 'test-font.woff2'
 			]
-		];
-
-		$sessionMock = $this->createMock( Session::class );
-		$sessionMock->method( 'get' )->willReturnCallback( function( $key ) use ( &$sessionData ) {
-			return $sessionData[$key] ?? null;
-		} );
-		$sessionMock->method( 'remove' )->willReturnCallback( function( $key ) use ( &$sessionData ) {
-			unset( $sessionData[$key] );
-		} );
-
-		$requestMock = $this->createMock( WebRequest::class );
-		$requestMock->method( 'getSession' )->willReturn( $sessionMock );
+		] );
 
 		// Call the private handleConfirmUpload method
-		$wrapper->handleConfirmUpload( $requestMock );
+		$wrapper->handleConfirmUpload( $request );
 
 		// Assertions
 		$this->assertFalse( $wrapper->isError );
@@ -219,7 +192,7 @@ class SpecialCustomFontsTest extends MediaWikiIntegrationTestCase {
 		$this->assertSame( [ 'woff2' => 'test-font.woff2' ], $json[0]['formats'] );
 
 		// Verify session cleared
-		$this->assertArrayNotHasKey( 'CustomFontsTempUpload', $sessionData );
+		$this->assertNull( $session->get( 'CustomFontsTempUpload' ) );
 	}
 
 	/**
@@ -234,31 +207,22 @@ class SpecialCustomFontsTest extends MediaWikiIntegrationTestCase {
 		$this->backend->prepare( [ 'dir' => $tempDir ] );
 		$this->backend->create( [ 'dst' => $tempDir . '/test-font.woff2', 'content' => 'woff2-content' ] );
 
-		// Mock Session populated with pending upload
-		$sessionData = [
-			'CustomFontsTempUpload' => [
-				'name' => 'Test Font',
-				'slug' => 'test-font',
-				'tempDir' => $tempDir,
-				'files' => [
-					'woff2' => 'test-font.woff2'
-				]
+		// Instantiate FauxRequest
+		$request = new \FauxRequest( [], true );
+
+		// Populate Session with pending upload
+		$session = $request->getSession();
+		$session->set( 'CustomFontsTempUpload', [
+			'name' => 'Test Font',
+			'slug' => 'test-font',
+			'tempDir' => $tempDir,
+			'files' => [
+				'woff2' => 'test-font.woff2'
 			]
-		];
-
-		$sessionMock = $this->createMock( Session::class );
-		$sessionMock->method( 'get' )->willReturnCallback( function( $key ) use ( &$sessionData ) {
-			return $sessionData[$key] ?? null;
-		} );
-		$sessionMock->method( 'remove' )->willReturnCallback( function( $key ) use ( &$sessionData ) {
-			unset( $sessionData[$key] );
-		} );
-
-		$requestMock = $this->createMock( WebRequest::class );
-		$requestMock->method( 'getSession' )->willReturn( $sessionMock );
+		] );
 
 		// Call the private handleCancelUpload method
-		$wrapper->handleCancelUpload( $requestMock );
+		$wrapper->handleCancelUpload( $request );
 
 		// Assertions
 		$this->assertFalse( $wrapper->isError );
@@ -268,6 +232,6 @@ class SpecialCustomFontsTest extends MediaWikiIntegrationTestCase {
 		$this->assertFalse( $this->backend->fileExists( [ 'src' => $tempDir . '/test-font.woff2' ] ) );
 
 		// Verify session cleared
-		$this->assertArrayNotHasKey( 'CustomFontsTempUpload', $sessionData );
+		$this->assertNull( $session->get( 'CustomFontsTempUpload' ) );
 	}
 }
