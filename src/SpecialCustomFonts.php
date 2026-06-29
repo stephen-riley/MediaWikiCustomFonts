@@ -960,55 +960,50 @@ class SpecialCustomFonts extends SpecialPage {
 			$currentFilename = $hasFile ? $targetFont['formats'][$format] : '';
 			$fileLabel = strtoupper( $format ) . ' File';
 
-			$fileInputHtml = new OOUI\Widget( [
-				'content' => new OOUI\HtmlSnippet(
-					'<input type="file" name="font-file-' . $format . '" id="mw-font-input-' . $format . '" accept=".' . $format . '" '
-					. ( $hasFile ? 'style="display: none;"' : '' ) . '>'
-				)
-			] );
+			$html = '<div style="margin-top: 1.5em; margin-bottom: 1em;">'
+				. '<h3 style="margin-top: 0; margin-bottom: 0.2em; border-bottom: 1px solid #a2a9b1; padding-bottom: 3px; font-weight: normal;">' . htmlspecialchars( $fileLabel ) . '</h3>'
+				. '<div style="color: #72777d; font-size: 0.9em; margin-bottom: 0.6em;">' . htmlspecialchars( $help ) . '</div>'
+				. '<input type="hidden" name="delete-file-' . $format . '" id="delete-file-' . $format . '" value="0">'
+				
+				. '<div id="mw-font-current-' . $format . '" style="display: ' . ( $hasFile ? 'flex' : 'none' ) . '; gap: 8px; align-items: center; margin-top: 4px; margin-bottom: 4px;">'
+				. '<span style="font-weight: bold; font-family: monospace; color: #202122;">' . htmlspecialchars( $currentFilename ) . '</span>'
+				. '<button type="button" style="border: 1px solid #36c; color: #36c; background: #fff; padding: 2px 8px; border-radius: 2px; font-weight: bold; cursor: pointer; font-size: 0.9em;" '
+				. 'onclick="'
+				. 'document.getElementById(\'mw-font-current-' . $format . '\').style.display=\'none\'; '
+				. 'document.getElementById(\'mw-font-cancel-block-' . $format . '\').style.display=\'flex\'; '
+				. 'document.getElementById(\'mw-font-input-' . $format . '\').style.display=\'block\';'
+				. '">Replace</button>'
+				. '<button type="button" style="border: 1px solid #d33; color: #d33; background: #fff; padding: 2px 8px; border-radius: 2px; font-weight: bold; cursor: pointer; font-size: 0.9em;" '
+				. 'onclick="'
+				. 'document.getElementById(\'delete-file-' . $format . '\').value=\'1\'; '
+				. 'document.getElementById(\'mw-font-current-' . $format . '\').style.display=\'none\'; '
+				. 'document.getElementById(\'mw-font-cancel-block-' . $format . '\').style.display=\'flex\'; '
+				. 'document.getElementById(\'mw-font-input-' . $format . '\').style.display=\'block\';'
+				. '">Delete</button>'
+				. '</div>'
 
-			if ( $hasFile ) {
-				$fileHelp = new OOUI\HtmlSnippet(
-					'<input type="hidden" name="delete-file-' . $format . '" id="delete-file-' . $format . '" value="0">'
-					. '<div id="mw-font-current-' . $format . '" style="display: flex; gap: 8px; align-items: center; margin-top: 4px; margin-bottom: 4px;">'
-					. '<span style="font-weight: bold; font-family: monospace; color: #202122;">' . htmlspecialchars( $currentFilename ) . '</span>'
-					. '<button type="button" style="border: 1px solid #36c; color: #36c; background: #fff; padding: 2px 8px; border-radius: 2px; font-weight: bold; cursor: pointer; font-size: 0.9em;" '
-					. 'onclick="'
-					. 'document.getElementById(\'mw-font-current-' . $format . '\').style.display=\'none\'; '
-					. 'document.getElementById(\'mw-font-cancel-block-' . $format . '\').style.display=\'flex\'; '
-					. 'document.getElementById(\'mw-font-input-' . $format . '\').style.display=\'block\';'
-					. '">Replace</button>'
-					. '<button type="button" style="border: 1px solid #d33; color: #d33; background: #fff; padding: 2px 8px; border-radius: 2px; font-weight: bold; cursor: pointer; font-size: 0.9em;" '
-					. 'onclick="'
-					. 'document.getElementById(\'delete-file-' . $format . '\').value=\'1\'; '
-					. 'document.getElementById(\'mw-font-current-' . $format . '\').style.display=\'none\'; '
-					. 'document.getElementById(\'mw-font-cancel-block-' . $format . '\').style.display=\'flex\'; '
-					. 'document.getElementById(\'mw-font-input-' . $format . '\').style.display=\'block\';'
-					. '">Delete</button>'
-					. '<span style="color: #72777d; font-size: 0.9em; margin-left: 4px;">(' . htmlspecialchars( $help ) . ')</span>'
-					. '</div>'
-					. '<div id="mw-font-cancel-block-' . $format . '" style="display: none; gap: 8px; align-items: center; margin-top: 4px; margin-bottom: 4px;">'
-					. '<button type="button" style="border: 1px solid #72777d; color: #202122; background: #fff; padding: 2px 8px; border-radius: 2px; font-weight: bold; cursor: pointer; font-size: 0.9em;" '
-					. 'onclick="'
-					. 'document.getElementById(\'mw-font-current-' . $format . '\').style.display=\'flex\'; '
-					. 'document.getElementById(\'mw-font-cancel-block-' . $format . '\').style.display=\'none\'; '
-					. 'document.getElementById(\'mw-font-input-' . $format . '\').style.display=\'none\'; '
-					. 'document.getElementById(\'delete-file-' . $format . '\').value=\'0\'; '
-					. 'var inp = document.getElementById(\'mw-font-input-' . $format . '\'); if (inp) { inp.value = \'\'; }'
-					. '">Cancel</button>'
-					. '<span style="color: #72777d; font-size: 0.9em; margin-left: 4px;">(' . htmlspecialchars( $help ) . ')</span>'
-					. '</div>'
-				);
-			} else {
-				$fileHelp = 'No file uploaded. Upload a file to add this format. (' . $help . ')';
-			}
+				. '<input type="file" name="font-file-' . $format . '" id="mw-font-input-' . $format . '" accept=".' . $format . '" '
+				. 'style="display: ' . ( $hasFile ? 'none' : 'block' ) . '; margin-top: 4px; margin-bottom: 4px;">'
+
+				. '<div id="mw-font-cancel-block-' . $format . '" style="display: none; gap: 8px; align-items: center; margin-top: 4px; margin-bottom: 4px;">'
+				. '<button type="button" style="border: 1px solid #72777d; color: #202122; background: #fff; padding: 2px 8px; border-radius: 2px; font-weight: bold; cursor: pointer; font-size: 0.9em;" '
+				. 'onclick="'
+				. 'document.getElementById(\'mw-font-current-' . $format . '\').style.display=\'flex\'; '
+				. 'document.getElementById(\'mw-font-cancel-block-' . $format . '\').style.display=\'none\'; '
+				. 'document.getElementById(\'mw-font-input-' . $format . '\').style.display=\'none\'; '
+				. 'document.getElementById(\'delete-file-' . $format . '\').value=\'0\'; '
+				. 'var inp = document.getElementById(\'mw-font-input-' . $format . '\'); if (inp) { inp.value = \'\'; }'
+				. '">Cancel</button>'
+				. '</div>'
+
+				. '<div id="mw-font-missing-hint-' . $format . '" style="display: ' . ( $hasFile ? 'none' : 'block' ) . '; color: #72777d; font-size: 0.9em; margin-top: 4px;">'
+				. 'No file uploaded. Upload a file to add this format.'
+				. '</div>'
+				. '</div>';
 
 			$fieldset->addItems( [
-				new OOUI\FieldLayout( $fileInputHtml, [
-					'label' => $fileLabel,
-					'align' => 'top',
-					'help' => $fileHelp,
-					'helpInline' => true
+				new OOUI\Widget( [
+					'content' => new OOUI\HtmlSnippet( $html )
 				] )
 			] );
 		}
