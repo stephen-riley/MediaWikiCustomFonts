@@ -29,6 +29,9 @@ class SpecialCustomFonts extends SpecialPage {
 	private string $deleteSlug = '';
 	private bool $showDeleteConfirm = false;
 
+	private string $editSlug = '';
+	private bool $showEditForm = false;
+
 	/**
 	 * @param RepoGroup $repoGroup
 	 * @param ResourceLoader $resourceLoader
@@ -92,6 +95,17 @@ class SpecialCustomFonts extends SpecialPage {
 					} else {
 						$this->handleConfirmUpload( $request );
 					}
+				} elseif ( $action === 'save-edit' ) {
+					$this->handleEdit( $request );
+				}
+			}
+		} else {
+			$action = $request->getVal( 'action' );
+			if ( $action === 'edit' ) {
+				$slug = (string)$request->getVal( 'slug' );
+				if ( $slug !== '' ) {
+					$this->showEditForm = true;
+					$this->editSlug = $slug;
 				}
 			}
 		}
@@ -170,7 +184,7 @@ class SpecialCustomFonts extends SpecialPage {
 
 			$uploadedFiles[$format] = [
 				'tmp' => $tmpName,
-				'name' => $slug . '.' . $format
+				'name' => $origName
 			];
 		}
 
@@ -692,6 +706,11 @@ class SpecialCustomFonts extends SpecialPage {
 			return;
 		}
 
+		if ( $this->showEditForm && $this->editSlug !== '' ) {
+			$this->renderEditForm( $this->editSlug );
+			return;
+		}
+
 		$repo = $this->repoGroup->getLocalRepo();
 		$backend = $repo->getBackend();
 		$fontsJsonPath = $repo->getZonePath( 'public' ) . '/fonts/fonts.json';
@@ -705,6 +724,11 @@ class SpecialCustomFonts extends SpecialPage {
 			}
 		}
 
+		// Sort fonts alphabetically by family name (case-insensitive)
+		usort( $fonts, static function ( $a, $b ) {
+			return strcasecmp( $a['name'] ?? '', $b['name'] ?? '' );
+		} );
+
 		// 1. View Module: Table of active fonts
 		$out->addHTML( '<h2>Active Fonts</h2>' );
 
@@ -716,7 +740,17 @@ class SpecialCustomFonts extends SpecialPage {
 			$tableHtml .= '<tbody>';
 
 			foreach ( $fonts as $font ) {
-				$formatsList = implode( ', ', array_keys( $font['formats'] ) );
+				$formatDetails = [];
+				$allFormats = [ 'eot', 'otf', 'ttf', 'woff', 'woff2' ];
+				foreach ( $allFormats as $format ) {
+					if ( isset( $font['formats'][$format] ) ) {
+						$filename = $font['formats'][$format];
+						$formatDetails[] = '<li>' . htmlspecialchars( $format ) . ': ' . htmlspecialchars( $filename ) . '</li>';
+					} else {
+						$formatDetails[] = '<li>' . htmlspecialchars( $format ) . ': <span style="color: red;">not present</span></li>';
+					}
+				}
+				$formatsListHtml = '<ul style="margin: 0; padding-left: 1.5em;">' . implode( '', $formatDetails ) . '</ul>';
 				$slugEsc = htmlspecialchars( $font['slug'] );
 				$nameEsc = htmlspecialchars( $font['name'] );
 
@@ -744,11 +778,20 @@ class SpecialCustomFonts extends SpecialPage {
 				] ) );
 				$deleteForm->appendContent( $deleteButton );
 
+				$editButton = new OOUI\ButtonWidget( [
+					'href' => $this->getPageTitle()->getLocalURL( [
+						'action' => 'edit',
+						'slug' => $font['slug']
+					] ),
+					'label' => 'Edit',
+					'flags' => [ 'progressive' ]
+				] );
+
 				$tableHtml .= '<tr>';
 				$tableHtml .= '<td><strong>' . $nameEsc . '</strong></td>';
 				$tableHtml .= '<td><code>' . $slugEsc . '</code></td>';
-				$tableHtml .= '<td>' . htmlspecialchars( $formatsList ) . '</td>';
-				$tableHtml .= '<td>' . $deleteForm . '</td>';
+				$tableHtml .= '<td>' . $formatsListHtml . '</td>';
+				$tableHtml .= '<td><div style="display: flex; gap: 8px; align-items: center;">' . $editButton . $deleteForm . '</div></td>';
 				$tableHtml .= '</tr>';
 			}
 
@@ -778,11 +821,11 @@ class SpecialCustomFonts extends SpecialPage {
 		] );
 
 		$formats = [
-			'woff2' => [ 'required' => false, 'help' => 'Highly recommended (optional).' ],
-			'ttf' => [ 'required' => false, 'help' => 'TrueType outline (optional).' ],
-			'woff' => [ 'required' => false, 'help' => 'Web Open Font Format (optional).' ],
-			'eot' => [ 'required' => false, 'help' => 'Embedded OpenType for legacy IE (optional).' ],
-			'otf' => [ 'required' => false, 'help' => 'OpenType outline (optional).' ],
+			'woff2' => [ 'required' => false, 'help' => 'Web Open Font Format 2.0 for modern browsers with superior compression (optional).' ],
+			'ttf' => [ 'required' => false, 'help' => 'TrueType Font for older browsers and general operating system compatibility (optional).' ],
+			'woff' => [ 'required' => false, 'help' => 'Web Open Font Format 1.0 for compatibility with older modern browsers (optional).' ],
+			'eot' => [ 'required' => false, 'help' => 'Embedded OpenType for legacy Internet Explorer compatibility (optional).' ],
+			'otf' => [ 'required' => false, 'help' => 'OpenType Font for advanced typesetting features and cross-platform compatibility (optional).' ],
 		];
 
 		foreach ( $formats as $format => $config ) {
@@ -828,5 +871,330 @@ class SpecialCustomFonts extends SpecialPage {
 		$uploadForm->appendContent( $fieldset );
 
 		$out->addHTML( $uploadForm );
+	}
+
+	/**
+	 * Render the edit form for a font family.
+	 *
+	 * @param string $slug
+	 * @return void
+	 */
+	private function renderEditForm( string $slug ): void {
+		$out = $this->getOutput();
+		$repo = $this->repoGroup->getLocalRepo();
+		$backend = $repo->getBackend();
+		$fontsJsonPath = $repo->getZonePath( 'public' ) . '/fonts/fonts.json';
+
+		$fonts = [];
+		if ( $backend->fileExists( [ 'src' => $fontsJsonPath ] ) ) {
+			$content = $backend->getFileContents( [ 'src' => $fontsJsonPath ] );
+			if ( is_string( $content ) ) {
+				$fonts = json_decode( $content, true ) ?: [];
+			}
+		}
+
+		$targetFont = null;
+		foreach ( $fonts as $font ) {
+			if ( isset( $font['slug'] ) && $font['slug'] === $slug ) {
+				$targetFont = $font;
+				break;
+			}
+		}
+
+		if ( !$targetFont ) {
+			$this->statusMessage = "Font family with slug '{$slug}' not found.";
+			$this->isError = true;
+			$this->showEditForm = false;
+			// Re-render main page
+			$this->renderPage();
+			return;
+		}
+
+		$out->setPageTitle( 'Edit Font Family: ' . $targetFont['name'] );
+		$out->addHTML( '<style>.mw-customfonts-hidden-input { display: none; }</style>' );
+
+		// Display status banner if set
+		if ( $this->statusMessage !== '' ) {
+			$class = $this->isError ? 'errorbox' : 'successbox';
+			$out->addHTML( "<div class=\"{$class}\">" . htmlspecialchars( $this->statusMessage ) . "</div><br>" );
+		}
+
+		$slugInput = new OOUI\TextInputWidget( [
+			'name' => 'font-slug-display',
+			'value' => $slug,
+			'disabled' => true
+		] );
+
+		$nameInput = new OOUI\TextInputWidget( [
+			'name' => 'font-name',
+			'required' => true,
+			'value' => $targetFont['name']
+		] );
+
+		$fieldset = new OOUI\FieldsetLayout( [
+			'label' => 'Edit Font Details'
+		] );
+
+		$fieldset->addItems( [
+			new OOUI\FieldLayout( $slugInput, [
+				'label' => 'Font Slug (cannot be changed)',
+				'align' => 'top'
+			] ),
+			new OOUI\FieldLayout( $nameInput, [
+				'label' => 'Font Family Name',
+				'align' => 'top',
+				'help' => 'Edit the family name used in CSS font-family rules.'
+			] )
+		] );
+
+		$formats = [
+			'woff2' => 'Web Open Font Format 2.0 for modern browsers with superior compression.',
+			'ttf' => 'TrueType Font for older browsers and general operating system compatibility.',
+			'woff' => 'Web Open Font Format 1.0 for compatibility with older modern browsers.',
+			'eot' => 'Embedded OpenType for legacy Internet Explorer compatibility.',
+			'otf' => 'OpenType Font for advanced typesetting features and cross-platform compatibility.',
+		];
+
+		foreach ( $formats as $format => $help ) {
+			$hasFile = isset( $targetFont['formats'][$format] );
+			$currentFilename = $hasFile ? $targetFont['formats'][$format] : '';
+			$fileLabel = strtoupper( $format ) . ' File';
+
+			$fileInputHtml = new OOUI\Widget( [
+				'content' => new OOUI\HtmlSnippet(
+					'<input type="file" name="font-file-' . $format . '" id="mw-font-input-' . $format . '" accept=".' . $format . '" '
+					. ( $hasFile ? 'style="display: none;"' : '' ) . '>'
+				)
+			] );
+
+			if ( $hasFile ) {
+				$fileHelp = new OOUI\HtmlSnippet(
+					'<input type="hidden" name="delete-file-' . $format . '" id="delete-file-' . $format . '" value="0">'
+					. '<div id="mw-font-current-' . $format . '" style="display: flex; gap: 8px; align-items: center; margin-top: 4px; margin-bottom: 4px;">'
+					. '<span style="font-weight: bold; font-family: monospace; color: #202122;">' . htmlspecialchars( $currentFilename ) . '</span>'
+					. '<button type="button" style="border: 1px solid #36c; color: #36c; background: #fff; padding: 2px 8px; border-radius: 2px; font-weight: bold; cursor: pointer; font-size: 0.9em;" '
+					. 'onclick="'
+					. 'document.getElementById(\'mw-font-current-' . $format . '\').style.display=\'none\'; '
+					. 'document.getElementById(\'mw-font-cancel-block-' . $format . '\').style.display=\'flex\'; '
+					. 'document.getElementById(\'mw-font-input-' . $format . '\').style.display=\'block\';'
+					. '">Replace</button>'
+					. '<button type="button" style="border: 1px solid #d33; color: #d33; background: #fff; padding: 2px 8px; border-radius: 2px; font-weight: bold; cursor: pointer; font-size: 0.9em;" '
+					. 'onclick="'
+					. 'document.getElementById(\'delete-file-' . $format . '\').value=\'1\'; '
+					. 'document.getElementById(\'mw-font-current-' . $format . '\').style.display=\'none\'; '
+					. 'document.getElementById(\'mw-font-cancel-block-' . $format . '\').style.display=\'flex\'; '
+					. 'document.getElementById(\'mw-font-input-' . $format . '\').style.display=\'block\';'
+					. '">Delete</button>'
+					. '<span style="color: #72777d; font-size: 0.9em; margin-left: 4px;">(' . htmlspecialchars( $help ) . ')</span>'
+					. '</div>'
+					. '<div id="mw-font-cancel-block-' . $format . '" style="display: none; gap: 8px; align-items: center; margin-top: 4px; margin-bottom: 4px;">'
+					. '<button type="button" style="border: 1px solid #72777d; color: #202122; background: #fff; padding: 2px 8px; border-radius: 2px; font-weight: bold; cursor: pointer; font-size: 0.9em;" '
+					. 'onclick="'
+					. 'document.getElementById(\'mw-font-current-' . $format . '\').style.display=\'flex\'; '
+					. 'document.getElementById(\'mw-font-cancel-block-' . $format . '\').style.display=\'none\'; '
+					. 'document.getElementById(\'mw-font-input-' . $format . '\').style.display=\'none\'; '
+					. 'document.getElementById(\'delete-file-' . $format . '\').value=\'0\'; '
+					. 'var inp = document.getElementById(\'mw-font-input-' . $format . '\'); if (inp) { inp.value = \'\'; }'
+					. '">Cancel</button>'
+					. '<span style="color: #72777d; font-size: 0.9em; margin-left: 4px;">(' . htmlspecialchars( $help ) . ')</span>'
+					. '</div>'
+				);
+			} else {
+				$fileHelp = 'No file uploaded. Upload a file to add this format. (' . $help . ')';
+			}
+
+			$fieldset->addItems( [
+				new OOUI\FieldLayout( $fileInputHtml, [
+					'label' => $fileLabel,
+					'align' => 'top',
+					'help' => $fileHelp,
+					'helpInline' => true
+				] )
+			] );
+		}
+
+		$submitButton = new OOUI\ButtonInputWidget( [
+			'type' => 'submit',
+			'label' => 'Save Changes',
+			'flags' => [ 'primary', 'progressive' ]
+		] );
+
+		$cancelButton = new OOUI\ButtonWidget( [
+			'href' => $this->getPageTitle()->getLocalURL(),
+			'label' => 'Cancel',
+			'flags' => [ 'safe' ]
+		] );
+
+		$buttonGroup = new OOUI\HorizontalLayout( [
+			'items' => [ $submitButton, $cancelButton ]
+		] );
+
+		$fieldset->addItems( [
+			$buttonGroup
+		] );
+
+		$csrfTokenSet = new CsrfTokenSet( $this->getRequest() );
+		$editForm = new OOUI\FormLayout( [
+			'method' => 'POST',
+			'action' => $this->getPageTitle()->getLocalURL(),
+			'enctype' => 'multipart/form-data'
+		] );
+		$editForm->appendContent( new OOUI\HiddenInputWidget( [
+			'name' => 'action',
+			'value' => 'save-edit'
+		] ) );
+		$editForm->appendContent( new OOUI\HiddenInputWidget( [
+			'name' => 'slug',
+			'value' => $slug
+		] ) );
+		$editForm->appendContent( new OOUI\HiddenInputWidget( [
+			'name' => 'token',
+			'value' => $csrfTokenSet->getToken()
+		] ) );
+		$editForm->appendContent( $fieldset );
+
+		$out->addHTML( $editForm );
+	}
+
+	/**
+	 * Process editing of a font family.
+	 *
+	 * @param WebRequest $request
+	 * @return void
+	 */
+	private function handleEdit( WebRequest $request ): void {
+		$slug = (string)$request->getVal( 'slug' );
+		$familyName = trim( (string)$request->getVal( 'font-name' ) );
+
+		if ( $slug === '' ) {
+			$this->statusMessage = 'Missing font slug for edit.';
+			$this->isError = true;
+			return;
+		}
+
+		if ( $familyName === '' ) {
+			$this->statusMessage = 'Font family name is required.';
+			$this->isError = true;
+			$this->showEditForm = true;
+			$this->editSlug = $slug;
+			return;
+		}
+
+		$repo = $this->repoGroup->getLocalRepo();
+		$backend = $repo->getBackend();
+		$fontsJsonPath = $repo->getZonePath( 'public' ) . '/fonts/fonts.json';
+
+		// Retrieve existing configurations
+		$fonts = [];
+		if ( $backend->fileExists( [ 'src' => $fontsJsonPath ] ) ) {
+			$content = $backend->getFileContents( [ 'src' => $fontsJsonPath ] );
+			if ( is_string( $content ) ) {
+				$fonts = json_decode( $content, true ) ?: [];
+			}
+		}
+
+		$fontKey = null;
+		foreach ( $fonts as $key => $font ) {
+			if ( isset( $font['slug'] ) && $font['slug'] === $slug ) {
+				$fontKey = $key;
+				break;
+			}
+		}
+
+		if ( $fontKey === null ) {
+			$this->statusMessage = "Font family with slug '{$slug}' not found.";
+			$this->isError = true;
+			return;
+		}
+
+		// Track font formats
+		$formats = [ 'woff2', 'woff', 'ttf', 'eot', 'otf' ];
+		$uploadedFiles = [];
+
+		foreach ( $formats as $format ) {
+			$fieldName = 'font-file-' . $format;
+			$tmpName = $request->getFileTempname( $fieldName );
+			$origName = $request->getFileName( $fieldName );
+
+			if ( !$tmpName || $origName === null || $origName === '' ) {
+				continue;
+			}
+
+			// Validate file extension
+			$ext = pathinfo( $origName, PATHINFO_EXTENSION );
+			if ( strtolower( $ext ) !== $format ) {
+				$this->statusMessage = "Invalid file extension for {$format} format (expected .{$format}).";
+				$this->isError = true;
+				$this->showEditForm = true;
+				$this->editSlug = $slug;
+				return;
+			}
+
+			$uploadedFiles[$format] = [
+				'tmp' => $tmpName,
+				'name' => $origName
+			];
+		}
+
+		$fontDir = $repo->getZonePath( 'public' ) . '/fonts/' . $slug;
+		$status = $backend->prepare( [ 'dir' => $fontDir ] );
+		if ( !$status->isOK() ) {
+			$this->statusMessage = 'Failed to prepare the storage directory: ' . $status->getWikiText( false, false, 'en' );
+			$this->isError = true;
+			$this->showEditForm = true;
+			$this->editSlug = $slug;
+			return;
+		}
+
+		$destFileMap = $fonts[$fontKey]['formats'] ?: [];
+		foreach ( $formats as $format ) {
+			$deleteFlag = $request->getVal( 'delete-file-' . $format );
+			if ( $deleteFlag === '1' ) {
+				unset( $destFileMap[$format] );
+			}
+		}
+
+		foreach ( $uploadedFiles as $format => $fileData ) {
+			$dstPath = $fontDir . '/' . $fileData['name'];
+
+			if ( method_exists( $backend, 'quickImport' ) ) {
+				$importStatus = $backend->quickImport( [ 'src' => $fileData['tmp'], 'dst' => $dstPath ] );
+			} else {
+				$importStatus = $backend->quickStore( [ 'src' => $fileData['tmp'], 'dst' => $dstPath ] );
+			}
+
+			if ( !$importStatus->isOK() ) {
+				$this->statusMessage = "Failed to store {$format} file: " . $importStatus->getWikiText( false, false, 'en' );
+				$this->isError = true;
+				$this->showEditForm = true;
+				$this->editSlug = $slug;
+				return;
+			}
+
+			$destFileMap[$format] = $fileData['name'];
+		}
+
+		$fonts[$fontKey]['name'] = $familyName;
+		$fonts[$fontKey]['formats'] = $destFileMap;
+
+		$jsonContent = json_encode( $fonts, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+		$writeStatus = $backend->create( [
+			'dst' => $fontsJsonPath,
+			'content' => $jsonContent,
+			'overwrite' => true
+		] );
+
+		if ( !$writeStatus->isOK() ) {
+			$this->statusMessage = 'Failed to write config file: ' . $writeStatus->getWikiText( false, false, 'en' );
+			$this->isError = true;
+			$this->showEditForm = true;
+			$this->editSlug = $slug;
+			return;
+		}
+
+		ResourceLoader::clearCache();
+
+		$this->statusMessage = "Font family '{$familyName}' updated successfully.";
+		$this->isError = false;
 	}
 }

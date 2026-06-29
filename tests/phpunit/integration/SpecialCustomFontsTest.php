@@ -134,8 +134,8 @@ class SpecialCustomFontsTest extends MediaWikiIntegrationTestCase {
 
 		// Verify files exist in backend's temp path
 		$tempDir = $wrapper->tempUploadData['tempDir'];
-		$this->assertTrue( $this->backend->fileExists( [ 'src' => $tempDir . '/test-font.woff2' ] ) );
-		$this->assertTrue( $this->backend->fileExists( [ 'src' => $tempDir . '/test-font.ttf' ] ) );
+		$this->assertTrue( $this->backend->fileExists( [ 'src' => $tempDir . '/dummy.woff2' ] ) );
+		$this->assertTrue( $this->backend->fileExists( [ 'src' => $tempDir . '/dummy.ttf' ] ) );
 
 		// Verify session has stash info
 		$session = $request->getSession();
@@ -322,6 +322,180 @@ class SpecialCustomFontsTest extends MediaWikiIntegrationTestCase {
 		// Verify removed from fonts.json
 		$json = json_decode( $this->backend->getFileContents( [ 'src' => $fontsJsonPath ] ), true );
 		$this->assertEmpty( $json );
+	}
+
+	/**
+	 * Test editing the font family name only.
+	 */
+	public function testHandleEditNameOnly(): void {
+		$specialPage = new SpecialCustomFonts( $this->repoGroupMock, $this->resourceLoaderMock );
+		$wrapper = TestingAccessWrapper::newFromObject( $specialPage );
+
+		// Setup registered font family and files
+		$fontDir = $this->repoMock->getZonePath( 'public' ) . '/fonts/test-font';
+		$this->backend->prepare( [ 'dir' => $fontDir ] );
+		$this->backend->create( [ 'dst' => $fontDir . '/test-font.woff2', 'content' => 'woff2-content' ] );
+
+		$fontsJsonPath = $this->repoMock->getZonePath( 'public' ) . '/fonts/fonts.json';
+		$fontData = [
+			[
+				'name' => 'Old Name',
+				'slug' => 'test-font',
+				'formats' => [
+					'woff2' => 'test-font.woff2'
+				]
+			]
+		];
+		$this->backend->create( [ 'dst' => $fontsJsonPath, 'content' => json_encode( $fontData ) ] );
+
+		// Instantiate FauxRequest with edit actions
+		$request = new FauxRequest( [
+			'action' => 'save-edit',
+			'slug' => 'test-font',
+			'font-name' => 'New Name'
+		], true );
+
+		// Call the private handleEdit method
+		$wrapper->handleEdit( $request );
+
+		// Assertions
+		$this->assertFalse( $wrapper->isError );
+		$this->assertStringContainsString( 'updated successfully', $wrapper->statusMessage );
+
+		// Verify slug did NOT change and files still exist
+		$this->assertTrue( $this->backend->fileExists( [ 'src' => $fontDir . '/test-font.woff2' ] ) );
+
+		// Verify name updated in fonts.json but slug and format stayed the same
+		$json = json_decode( $this->backend->getFileContents( [ 'src' => $fontsJsonPath ] ), true );
+		$this->assertCount( 1, $json );
+		$this->assertSame( 'New Name', $json[0]['name'] );
+		$this->assertSame( 'test-font', $json[0]['slug'] );
+		$this->assertSame( [ 'woff2' => 'test-font.woff2' ], $json[0]['formats'] );
+	}
+
+	/**
+	 * Test editing the font family by uploading a new format file and replacing an existing file.
+	 */
+	public function testHandleEditWithNewFiles(): void {
+		$specialPage = new SpecialCustomFonts( $this->repoGroupMock, $this->resourceLoaderMock );
+		$wrapper = TestingAccessWrapper::newFromObject( $specialPage );
+
+		// Setup registered font family and files
+		$fontDir = $this->repoMock->getZonePath( 'public' ) . '/fonts/test-font';
+		$this->backend->prepare( [ 'dir' => $fontDir ] );
+		$this->backend->create( [ 'dst' => $fontDir . '/test-font.woff2', 'content' => 'old-woff2' ] );
+
+		$fontsJsonPath = $this->repoMock->getZonePath( 'public' ) . '/fonts/fonts.json';
+		$fontData = [
+			[
+				'name' => 'Test Font',
+				'slug' => 'test-font',
+				'formats' => [
+					'woff2' => 'test-font.woff2'
+				]
+			]
+		];
+		$this->backend->create( [ 'dst' => $fontsJsonPath, 'content' => json_encode( $fontData ) ] );
+
+		// Create dummy source files for upload
+		$srcWoff2 = $this->tempDir . '/new.woff2';
+		$srcTtf = $this->tempDir . '/new.ttf';
+		file_put_contents( $srcWoff2, 'new-woff2-content' );
+		file_put_contents( $srcTtf, 'new-ttf-content' );
+
+		// Instantiate FauxRequest
+		$request = new FauxRequest( [
+			'action' => 'save-edit',
+			'slug' => 'test-font',
+			'font-name' => 'Test Font'
+		], true );
+
+		$request->setUpload( 'font-file-woff2', [
+			'name' => 'new.woff2',
+			'type' => 'font/woff2',
+			'size' => 17,
+			'tmp_name' => $srcWoff2,
+			'error' => UPLOAD_ERR_OK
+		] );
+		$request->setUpload( 'font-file-ttf', [
+			'name' => 'new.ttf',
+			'type' => 'font/ttf',
+			'size' => 15,
+			'tmp_name' => $srcTtf,
+			'error' => UPLOAD_ERR_OK
+		] );
+
+		// Call the private handleEdit method
+		$wrapper->handleEdit( $request );
+
+		// Assertions
+		$this->assertFalse( $wrapper->isError );
+
+		// Verify files exist in backend's path and are saved with their original names
+		$this->assertTrue( $this->backend->fileExists( [ 'src' => $fontDir . '/new.woff2' ] ) );
+		$this->assertSame( 'new-woff2-content', $this->backend->getFileContents( [ 'src' => $fontDir . '/new.woff2' ] ) );
+		$this->assertTrue( $this->backend->fileExists( [ 'src' => $fontDir . '/new.ttf' ] ) );
+		$this->assertSame( 'new-ttf-content', $this->backend->getFileContents( [ 'src' => $fontDir . '/new.ttf' ] ) );
+
+		// Verify json formats updated to include new.woff2 and new.ttf
+		$json = json_decode( $this->backend->getFileContents( [ 'src' => $fontsJsonPath ] ), true );
+		$this->assertCount( 1, $json );
+		$this->assertSame( [
+			'woff2' => 'new.woff2',
+			'ttf' => 'new.ttf'
+		], $json[0]['formats'] );
+	}
+
+	/**
+	 * Test deleting a font file entry from the formats map during edit.
+	 */
+	public function testHandleEditDeleteFile(): void {
+		$specialPage = new SpecialCustomFonts( $this->repoGroupMock, $this->resourceLoaderMock );
+		$wrapper = TestingAccessWrapper::newFromObject( $specialPage );
+
+		// Setup registered font family and files
+		$fontDir = $this->repoMock->getZonePath( 'public' ) . '/fonts/test-font';
+		$this->backend->prepare( [ 'dir' => $fontDir ] );
+		$this->backend->create( [ 'dst' => $fontDir . '/test-font.woff2', 'content' => 'woff2-content' ] );
+		$this->backend->create( [ 'dst' => $fontDir . '/test-font.ttf', 'content' => 'ttf-content' ] );
+
+		$fontsJsonPath = $this->repoMock->getZonePath( 'public' ) . '/fonts/fonts.json';
+		$fontData = [
+			[
+				'name' => 'Test Font',
+				'slug' => 'test-font',
+				'formats' => [
+					'woff2' => 'test-font.woff2',
+					'ttf' => 'test-font.ttf'
+				]
+			]
+		];
+		$this->backend->create( [ 'dst' => $fontsJsonPath, 'content' => json_encode( $fontData ) ] );
+
+		// Instantiate FauxRequest to delete ttf but keep woff2
+		$request = new FauxRequest( [
+			'action' => 'save-edit',
+			'slug' => 'test-font',
+			'font-name' => 'Test Font',
+			'delete-file-ttf' => '1'
+		], true );
+
+		// Call the private handleEdit method
+		$wrapper->handleEdit( $request );
+
+		// Assertions
+		$this->assertFalse( $wrapper->isError );
+
+		// Verify files are NOT deleted from the storage backend (per request)
+		$this->assertTrue( $this->backend->fileExists( [ 'src' => $fontDir . '/test-font.ttf' ] ) );
+		$this->assertTrue( $this->backend->fileExists( [ 'src' => $fontDir . '/test-font.woff2' ] ) );
+
+		// Verify ttf removed from fonts.json but woff2 remains
+		$json = json_decode( $this->backend->getFileContents( [ 'src' => $fontsJsonPath ] ), true );
+		$this->assertCount( 1, $json );
+		$this->assertSame( [
+			'woff2' => 'test-font.woff2'
+		], $json[0]['formats'] );
 	}
 }
 
