@@ -43,6 +43,13 @@ class SpecialCustomFonts extends SpecialPage {
 	}
 
 	/**
+	 * @inheritDoc
+	 */
+	protected function getGroupName() {
+		return 'pagetools';
+	}
+
+	/**
 	 * Execute the special page.
 	 *
 	 * @param string|null $subPage

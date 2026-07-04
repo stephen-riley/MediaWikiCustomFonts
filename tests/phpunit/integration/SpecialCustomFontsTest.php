@@ -87,6 +87,10 @@ class SpecialCustomFontsTest extends MediaWikiIntegrationTestCase {
 		$specialPage = new SpecialCustomFonts( $this->repoGroupMock, $this->resourceLoaderMock );
 		$this->assertSame( 'CustomFonts', $specialPage->getName() );
 		$this->assertSame( 'manage-custom-fonts', $specialPage->getRestriction() );
+		$this->assertSame( 'pagetools', $specialPage->getFinalGroupName() );
+
+		$wrapper = TestingAccessWrapper::newFromObject( $specialPage );
+		$this->assertSame( 'pagetools', $wrapper->getGroupName() );
 	}
 
 	/**
