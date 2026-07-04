@@ -12,8 +12,9 @@ This extension is built targeting **MediaWiki 1.45.x+** and conforms to modern e
 - **Dynamic CSS Module:** A dynamic ResourceLoader stylesheet module that reads font details from an index and generates standard CSS `@font-face` rules.
 - **Safe Storage Abstraction:** Uploaded fonts are managed via MediaWiki's `FileBackend` (under `$IP/images/fonts/`), avoiding raw PHP filesystem operations to maintain compatibility with remote storage backends (e.g., AWS S3, Swift).
 - **Incomplete Package Warning:** Prompts administrators with an OOUI warning page when attempting to register a font with fewer than all 5 formats (stashing files temporarily in `fonts/tmp/`), allowing them to proceed or cancel.
+- **Font Family Editing:** Allows administrators to edit an existing font family's name (while keeping the slug read-only), upload new format files to add formats or replace/overwrite existing formats, and delete registered format entries from `fonts.json` (leaving the actual physical files untouched on the server to prevent link breakage).
 - **Delete Confirmation:** Prompts administrators with an OOUI confirmation warning screen before permanently deleting a font and all its associated files to prevent accidental removal.
-- **Auto Cache Invalidation:** Automatically invalidates ResourceLoader cache (`ResourceLoader::clearCache()`) immediately on font upload or deletion.
+- **Auto Cache Invalidation:** Automatically invalidates ResourceLoader cache (`ResourceLoader::clearCache()`) immediately on font upload, edit, or deletion.
 - **Modern Hook System:** Injects fonts globally using modern hook handlers mapping the `BeforePageDisplay` hook.
 - **Robust Security:** Form submissions validate user permissions (`manage-custom-fonts`) and challenge CSRF tokens via `CsrfTokenSet`.
 
@@ -84,7 +85,7 @@ The active fonts index tracks uploaded font metadata:
 ]
 ```
 
-*Note: The font family name is safely sanitized into a lowercase alphanumeric-and-hyphen slug (e.g., "Open Sans" becomes "open-sans") which is used as both the subdirectory name and prefix for files.*
+*Note: The font family name is safely sanitized into a lowercase alphanumeric-and-hyphen slug (e.g., "Open Sans" becomes "open-sans") which is used as the subdirectory name. Original filenames are preserved during upload and registration.*
 
 ---
 
@@ -100,6 +101,9 @@ The extension includes a comprehensive suite of unit and integration tests under
   - Complete upload registrations.
   - Incomplete upload warning triggering, stashing, confirmation, and cancellation.
   - Delete warning confirmation triggering, deletion of font files and directory, and cancellation.
+  - Editing font family name only.
+  - Uploading and replacing format files (preserving original filenames).
+  - Deleting font file entries from the configuration map while keeping files on the backend.
 
 ### Run all tests in the extension
 
